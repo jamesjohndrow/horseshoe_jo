@@ -1,4 +1,5 @@
-function[pMean,pMedian,pLambda,pSigma,betaout]=horseshoe(y,X,BURNIN,MCMC,thin,scl_ub,scl_lb,phasein,SAVE_SAMPLES,ab,trunc,a0,b0,BetaTrue,disp_int,plotting,corX)
+function[Beta_hat,pMedian,pLambda,pSigma,betaout,xiout,sigmaSqout,lambdaout,t]=horseshoe(y,X,BURNIN,MCMC,thin,scl_ub,scl_lb,phasein,SAVE_SAMPLES,a0,b0,BetaTrue,disp_int,plotting,corX,simtype,nkeep,ApproxXLX,...
+    is_sim,yt,Xt,delt,rhoX,mh_sigma,s_sigma)
 % Function to impelement Horseshoe shrinkage prior (http://faculty.chicagobooth.edu/nicholas.polson/research/papers/Horse.pdf)
 % in Bayesian Linear Regression. %%
 % Based on code by Antik Chakraborty (antik@stat.tamu.edu) and Anirban Bhattacharya (anirbanb@stat.tamu.edu)
@@ -54,11 +55,20 @@ function[pMean,pMedian,pLambda,pSigma,betaout]=horseshoe(y,X,BURNIN,MCMC,thin,sc
 
 %profile on;
 
+if ApproxXLX
+    simtype = strcat(simtype,'_approx_',num2str(-log10(delt)));
+end
+if corX
+   simtype = strcat(simtype,'_cor_',strrep(num2str(rhoX*10),'.','_')); 
+end
 
 tic;
 N=BURNIN+MCMC;
 effsamp=(N-BURNIN)/thin;
 [n,p]=size(X);
+%[U,D,V] = svd(X,'econ');
+%Dd = diag(D);
+%dV = bsxfun(@times,Dd',V);
 
 % paramters %
 Beta=ones(p,1); 
@@ -66,206 +76,320 @@ lambda=ones(p,1);
 tau=1; sigma_sq=1;
 
 % output %
-betaout=zeros(50,effsamp);
-lambdaout=zeros(50,effsamp);
-etaout = zeros(50,effsamp);
+betaout=zeros(nkeep,effsamp);
+lambdaout=zeros(nkeep,effsamp);
+etaout = zeros(nkeep,effsamp);
 tauout=zeros(effsamp,1);
 xiout = zeros(MCMC+BURNIN,1);
 sigmaSqout=zeros(effsamp,1);
 l1out = zeros(MCMC+BURNIN,1);
 pexpout = zeros(MCMC+BURNIN,1);
 ACC = zeros(MCMC+BURNIN,1);
+ACC_s = zeros(MCMC+BURNIN,1);
 
 % matrices %
-I_n=eye(n); 
+if issparse(X)
+   I_n = speye(n); 
+   %s_max = svds(X,1);
+else
+    I_n=eye(n); 
+end
 l=ones(n,1);
+
+%Xy = X'*y;
 
 Xi = tau^(-2);
 Eta = lambda.^(-2);
+% lambda_old = lambda;
+
+if ~is_sim
+   Beta_hat = zeros(p,1); 
+end
 
 % start Gibbs sampling %
-for i=1:N  
-    
+t = 0;
+tic;
+for i=1:N      
+    if mod(i,disp_int)==0
+        disp(num2str(i)); dt = toc; tic;
+        t = t+dt;
+        disp([num2str(disp_int) ' iterations in ' num2str(dt) ' seconds']);
+        %Beta(1:20)'        
+    end
+    % disp(num2str(i));
     % update tau %
     if i>0
-        if ab
-            tempt = sum((Beta./lambda).^2)/(2*sigma_sq);
-            et = 1/tau^2;
-            utau = unifrnd(0,1/(1+et));
-            ubt = (1-utau)/utau;
-            Fubt = gamcdf(ubt,(p+1)/2,1/tempt);
-            if trunc
-                Fubt = max(Fubt,1e-8); % for numerical stability
+        Eta = lambda.^(-2);
+        if i<phasein
+            std_MH = (scl_ub.*(phasein-i)+scl_lb.*i)./phasein;
+        else
+            std_MH = scl_lb;
+        end
+        prop_Xi = exp(normrnd(log(Xi),std_MH));
+        %prop_Xi = exp(trnd(2).*std_MH + log(Xi));
+        
+        if ApproxXLX
+            which_in = lambda.^2.*max(1/Xi,1/prop_Xi)>delt;
+            id1 = (1:p)'; id1 = id1(which_in);
+            rXLX = sum(which_in);
+            %disp(num2str(rXLX));
+            
+            lambda1 = lambda(id1); X1 = X(:,id1);
+            
+            LX1 = bsxfun(@times,lambda1.^2,X1');
+            
+            LX = LX1;
+            if rXLX < n/2
+                XX1 = X1'*X1;
+            else
+                XLX = X1*LX1;
             end
-            ut = unifrnd(0,Fubt);
-            et = gaminv(ut,(p+1)/2,1/tempt);
-            tau = 1/sqrt(et);
-            Xi = et;
         else
             LX=bsxfun(@times,(lambda.^2),X');
             XLX = X*LX;
-            
-            Eta = lambda.^(-2);
-            if i<phasein
-               std_MH = (scl_ub.*(phasein-i)+scl_lb.*i)./phasein; 
-            else
-               std_MH = scl_lb; 
-            end
-            prop_Xi = exp(normrnd(log(Xi),std_MH));
-            lrat_prop = lmh_ratio(XLX,y,prop_Xi,I_n,n,a0,b0);
-            lrat_curr = lmh_ratio(XLX,y,Xi,I_n,n,a0,b0);
-            log_acc_rat = (lrat_prop-lrat_curr)+(log(prop_Xi)-log(Xi));
-            
-            ACC(i) = (rand < exp(log_acc_rat));
-            if ACC(i) % if accepted, update
-                Xi = prop_Xi;
-            end
-            tau = 1./sqrt(Xi);
+            rXLX = n;
         end
+        
+        
+        
+        
+        if rXLX<n/2 && ApproxXLX
+            M_prop = [];
+            XL0 = bsxfun(@times,X1,lambda1');
+            s = diag(chol(XL0'*XL0));
+            %s = svd(full(bsxfun(@times,X1,lambda1')));
+            s_prop = s.*(1./sqrt(prop_Xi));            
+            cM_prop = sqrt(1+s_prop.^2);            
+            M = [];
+            s_curr = s.*(1./sqrt(Xi));
+            cM = sqrt(1+s_curr.^2);
+            x_prop = y - X1*((prop_Xi.*diag(lambda1.^(-2))+XX1)\(X1'*y));
+            x = y - X1*((Xi.*diag(lambda1.^(-2))+XX1)\(X1'*y));
+        else
+            M = I_n + (1./Xi).*XLX;
+            M_prop = I_n + (1./prop_Xi).*XLX;
+            if issparse(X)
+                per = symamd(M_prop);
+                cM_prop = diag(chol(M_prop(per,per),'lower'));
+                cM = diag(chol(M(per,per),'lower'));
+            else
+                cM_prop = diag(chol(M_prop));
+                cM = diag(chol(M));
+            end
+            x_prop = M_prop\y;
+            x = M\y;
+        end
+        
+
+        [lrat_prop,~] = lmh_ratio(y,x_prop,prop_Xi,cM_prop,n,a0,b0);
+        [lrat_curr,~] = lmh_ratio(y,x,Xi,cM,n,a0,b0);
+        log_acc_rat = (lrat_prop-lrat_curr)+(log(prop_Xi)-log(Xi));
+              
+ 
+        ACC(i) = (rand < exp(log_acc_rat));
+        if ACC(i) % if accepted, update
+            Xi = prop_Xi;
+            M = M_prop;
+            x = x_prop;
+        end
+        tau = 1./sqrt(Xi);
     end
     
     % update sigma_sq %
-    if ab
-        % new method
-        if trunc
-            E_1=max((y-X*Beta)'*(y-X*Beta),(1e-10)); % for numerical stability
-            E_2=max(sum(Beta.^2./((tau*lambda)).^2),(1e-10));
-        else
-            E_1 = (y-X*Beta)'*(y-X*Beta); E_2 = sum(Beta.^2./((tau*lambda)).^2);
+
+        
+    % metropolis option
+    if mh_sigma
+        ssr = y'*x;
+        prop_k = exp(normrnd(log(1./sigma_sq),s_sigma));
+        %prop_k
+
+        l_prop = (n+a0-2)/2*log(prop_k)-prop_k*(ssr+b0)/2;
+        l_curr = (n+a0-2)/2*log(1./sigma_sq)-(1/sigma_sq)*(ssr+b0)/2;
+        l_ar = (l_prop-l_curr) + (log(prop_k)-log(1/sigma_sq));
+        acc_s = rand<exp(l_ar);
+        if acc_s
+            sigma_sq = 1/prop_k;
         end
-        
-        sigma_sq=1/gamrnd((n+p+a0)/2,2/(b0+E_1+E_2));
-        
+        ACC_s(i) = acc_s;
     else
-        % update sigma2 marginal of beta %
-        M = I_n + (1./Xi).*XLX;
-        xtmp = M\y;
-        ssr = y'*xtmp;
-        
+        ssr = y'*x;
         sigma_sq = 1/gamrnd((n+a0)/2,2/(ssr+b0));
     end
+    
 
-    % update beta %
-    if ab
-        lambda_star=tau*lambda;
-        U=bsxfun(@times,(lambda_star.^2),X');
-        M = I_n + X*U;
-    else
-        U = (1./Xi).*LX;
-    end
-
+    
+    U = (1./Xi).*LX;    
+    
     % step 1 %
     u=normrnd(0,tau*lambda);
     v=X*u+normrnd(0,l);
-
+    
     % step 2 %
-    v_star=(M)\((y./sqrt(sigma_sq))-v);
-    Beta=sqrt(sigma_sq)*(u+U*v_star);
     
-
-
-    
-    % update lambda_j's in a block using slice sampling %
-    if ab && trunc
-        eta = 1./(lambda.^2); 
-        upsi = unifrnd(0,1./(1+eta));
-        tempps = Beta.^2/(2*sigma_sq*tau^2); 
-        ub = (1-upsi)./upsi;
-
-        % now sample eta from exp(tempv) truncated between 0 & upsi/(1-upsi)
-        Fub = 1 - exp(-tempps.*ub); % exp cdf at ub 
-        Fub(Fub < (1e-4)) = 1e-4;  % for numerical stability
-        up = unifrnd(0,Fub); 
-        eta = -log(1-up)./tempps; 
-        lambda = 1./sqrt(eta);
-        Eta = eta;
+    if ApproxXLX && rXLX<n/2 % woodbury
+        tmp = (Xi.*diag(lambda1.^(-2))+XX1)\(X1'*((y./sqrt(sigma_sq))-v));
+        v_star = ((y./sqrt(sigma_sq))-v)-X1*tmp;
+        Beta = sqrt(sigma_sq)*u;
+        Beta(id1) = Beta(id1) + sqrt(sigma_sq)*(U*v_star);
+    elseif ApproxXLX && rXLX>=n/2 % direct solve
+        v_star=(M)\((y./sqrt(sigma_sq))-v);
+        Beta = sqrt(sigma_sq)*u;
+        Beta(id1) = Beta(id1) + sqrt(sigma_sq)*(U*v_star);
     else
-        u = unifrnd(0, 1./(Eta+1));
-        gamma_rate = (Beta.^2) .* Xi ./ (2.*sigma_sq);
-        Eta = gen_truncated_exp(gamma_rate, (1-u)./u);
-        if any(Eta<=0)
-           disp([num2str(sum(Eta<=0)) ' Eta underflowed, replacing = machine epsilon']);
-           Eta(Eta<=0) = eps;
-        end
-        %Eta(Eta<=0) = 1e-10;
-        lambda = 1./sqrt(Eta);
-     end
+        v_star=(M)\((y./sqrt(sigma_sq))-v);
+        Beta=sqrt(sigma_sq)*(u+U*v_star);
+    end        
 
-    if mod(i,disp_int) == 0
-        %toc
-        %tic;
-        disp(i);
+    if ~is_sim
+        if i < floor(BURNIN/2)
+            Beta_hat = (i-1)./i.*Beta_hat + 1./i.*Beta;
+        elseif i==floor(BURNIN/2)
+            Beta_hat = Beta;
+            se = Beta.^2;
+        else
+            idrem = floor(BURNIN/2);
+            Beta_hat = (i-idrem-1)./(i-idrem).*Beta_hat + 1./(i-idrem).*Beta;
+            se = (i-idrem-1)./(i-idrem).*se + 1./(i-idrem).*Beta.^2;
+        end
+    end
+
+    u = unifrnd(0, 1./(Eta+1));
+    gamma_rate = (Beta.^2) .* Xi ./ (2.*sigma_sq);
+    Eta = gen_truncated_exp(gamma_rate, (1-u)./u);
+    if any(Eta<=0)
+        disp([num2str(sum(Eta<=0)) ' Eta underflowed, replacing = machine epsilon']);
+        Eta(Eta<=0) = eps;
+    end
+    lambda = 1./sqrt(Eta);
+
+    %disp(num2str(i));
+    if mod(i,disp_int) == 0 
+        disp(num2str(i));    
+        mean(ACC_s(1:(i-1)))
         disp(mean(ACC(1:i)));
-        Beta(1:20)
-        if plotting
-            figure(1);subplot(2,2,1);plot(log(xiout(50:(i-1))),'.');title('log(\xi)');
-            subplot(2,2,2);plot(sigmaSqout(50:(i-1)),'.');title('\sigma^2');
-            subplot(2,2,3);plot(betaout(1,50:(i-1)),'.');title('\beta_1');
-            subplot(2,2,4);plot(etaout(1,50:(i-1)),'.');title('\eta_1');
+        disp(['rank of XLX: ' num2str(rXLX)]);
+        if is_sim
+            Beta(1:20)        
+        else
+            Bet_ord = sort(Beta_hat,'descend');
+            Bet_ord(1:20)
+        end
+        if plotting && i > BURNIN
+            id_upper = i-BURNIN-1;
+            figure(1);subplot(2,2,1);plot(log(xiout(50:id_upper)),'.');title('log(\xi)');
+            subplot(2,2,2);plot(log(1./sigmaSqout(50:id_upper)),'.');title('log(\sigma^{-2})');
+            subplot(2,2,3);plot(betaout(1,50:id_upper),'.');title('\beta_1');
+            subplot(2,2,4);plot(etaout(1,50:id_upper),'.');title('\eta_1');
             drawnow;
-            figure(2); subplot(1,2,1);plot(l1out(1:(i-1)),'.');title('L1');ylim([0 1]);
-            subplot(1,2,2);plot(pexpout(1:(i-1)),'.');title('pexpl'); ylim([0 1]);
+            figure(2); subplot(1,2,1);plot(l1out(1:id_upper),'.');title('L1');ylim([0 1]);
+            subplot(1,2,2);plot(pexpout(1:id_upper),'.');title('pexpl'); ylim([0 1]);
             drawnow;
+            figure(3);
+            for j0=1:25
+                subplot(5,5,j0); plot(betaout(j0,50:id_upper),'.');
+            end
+            drawnow;
+            figure(5); hist(log10((1./Xi).*lambda.^2),100); title('\xi^{-1} \lambda^2_j');drawnow;
+            
+            if ~is_sim
+                figure(4);
+                for j0=1:6
+                    subplot(2,3,j0); plot(betaout(j0,50:id_upper),'.');
+                end
+                drawnow;
+            end
         end
     end
     
-    per_expl = 1-sqrt(sum((Beta-BetaTrue).^2))./sqrt(sum(BetaTrue.^2));
-    L1_loss = 1-sum(abs(Beta-BetaTrue))./sum(abs(BetaTrue));
+    if is_sim
+        per_expl = 1-sqrt(sum((Beta-BetaTrue).^2))./sqrt(sum(BetaTrue.^2));        
+        L1_loss = 1-sum(abs(Beta-BetaTrue))./sum(abs(BetaTrue));
+    else
+        res1 = yt-Xt(:,id1)*Beta_hat(id1);
+        per_expl = 1-sqrt(sum(res1.^2))./sqrt(sum(yt.^2));
+        L1_loss = 1-sum(abs(res1))./sum(abs(yt));        
+    end
     
-    if i > BURNIN && mod(i, thin)== 0
-        betaout(:,(i-BURNIN)/thin) = Beta(1:50);
-        lambdaout(:,(i-BURNIN)/thin) = lambda(1:50);
-        etaout(:,(i-BURNIN)/thin) = Eta(1:50);
+    if i==BURNIN || (i==1 && BURNIN==0)
+        if ~is_sim
+            [~,big_id] = sort(abs(Beta_hat),'descend');
+            big_id = big_id(1:nkeep/2);
+            other_id = setdiff((1:p)',big_id);
+            other_id = other_id(1:nkeep/2);
+            keep_id = [big_id;other_id];
+        else
+            keep_id = (1:nkeep)';
+        end
+    end
+    
+    if i > BURNIN && mod(i, thin)== 0        
+        betaout(:,(i-BURNIN)/thin) = Beta(keep_id);
+        lambdaout(:,(i-BURNIN)/thin) = lambda(keep_id);
+        etaout(:,(i-BURNIN)/thin) = Eta(keep_id);
         tauout((i-BURNIN)/thin)=tau;
-        xiout(i) = Xi;
+        xiout((i-BURNIN)/thin) = Xi;
         sigmaSqout((i-BURNIN)/thin)=sigma_sq;
-        l1out(i) = L1_loss;
-        pexpout(i) = per_expl;
+        l1out((i-BURNIN)/thin) = L1_loss;
+        pexpout((i-BURNIN)/thin) = per_expl;
     end
 end
 pMean=mean(betaout,2);
 pMedian=median(betaout,2);
 pSigma=mean(sigmaSqout);
 pLambda=mean(lambdaout,2);
-t=toc;
-fprintf('Execution time of %d Gibbs iteration with (n,p)=(%d,%d)is %f seconds',N,n,p,t)
+dt=toc; t = t+dt;
+
+ci_lo = quantile(betaout(:,5001:end)',.025,1);
+ci_hi = quantile(betaout(:,5001:end)',.975,1);
+
+if is_sim
+    coverage = mean(BetaTrue(1:nkeep)>ci_lo' & BetaTrue(1:nkeep)<ci_hi');
+    BetaHat = mean(betaout(:,5001:end),2)';
+    Beta_hat = BetaHat;
+
+    mse = mean((BetaTrue(1:nkeep)-BetaHat').^2);
+    se = std(betaout(:,5001:end),[],2);
+
+    disp(['coverage ' num2str(100*coverage)]);
+    disp(['mse ' num2str(mse)]);
+    keep_id = [];
+else
+   coverage = []; mse = [];
+   BetaHat = Beta_hat;
+end
+
+
+disp([num2str(t) ' seconds elapsed']);
 if SAVE_SAMPLES
-    if ~ab
-        if corX
-            save(strcat('Outputs/post_reg_horse_corX_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t');  
-        else
-            save(strcat('Outputs/post_reg_horse_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t');  
-        end
-    else
-        if trunc
-            if corX
-                save(strcat('Outputs/post_reg_horse_ab_trunc_corX_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t');
-            else
-                save(strcat('Outputs/post_reg_horse_ab_trunc_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t');
-            end
-        else
-            if corX
-                save(strcat('Outputs/post_reg_horse_ab_corX_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t');
-            else
-                save(strcat('Outputs/post_reg_horse_ab_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t');
-            end
-        end
-    end
+    save(strcat('Outputs/post_reg_horse_',simtype,'_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t',...
+        'ci_hi','ci_lo','coverage','BetaHat','mse','se','BetaTrue','keep_id');
 end
 
-%profile viewer;
+
+figure(1);subplot(2,2,1);plot(log(xiout(50:(i-BURNIN-1))),'.');title('log(\xi)');
+subplot(2,2,2);plot(log(1./sigmaSqout(50:(i-BURNIN-1))),'.');title('log(\sigma^{-2})');
+subplot(2,2,3);plot(betaout(1,50:(i-BURNIN-1)),'.');title('\beta_1');
+subplot(2,2,4);plot(etaout(1,50:(i-BURNIN-1)),'.');title('\eta_1');
+drawnow;
+figure(2); subplot(1,2,1);plot(l1out(1:(i-BURNIN-1)),'.');title('L1');ylim([0 1]);
+subplot(1,2,2);plot(pexpout(1:(i-BURNIN-1)),'.');title('pexpl'); ylim([0 1]);
+drawnow;
+figure(3);
+for j0=1:25
+    subplot(5,5,j0); plot(betaout(j0,50:(i-BURNIN-1)),'.'); title(strcat('\beta_{',num2str(j0),'}'));
+end
+drawnow;
+
 end
 
 
 
-function lr = lmh_ratio(XLX,y,Xi,I_n,n,a0,b0)
-    % marginal of beta, sigma2
-    M = I_n + (1./Xi).*XLX;
-    x = M\y;
+function [lr,x] = lmh_ratio(y,x,Xi,cM,n,a0,b0)
+    % marginal of beta, sigma2    
     ssr = y'*x+b0;
     try
-        cM = chol(M); 
-        ldetM = 2*sum(log(diag(cM)));
+        ldetM = 2*sum(log(cM));        
         ll = -.5.*ldetM - ((n+a0)/2).*log(ssr);
         lpr = -log(sqrt(Xi).*(1+Xi));
         lr = ll+lpr;
@@ -273,6 +397,7 @@ function lr = lmh_ratio(XLX,y,Xi,I_n,n,a0,b0)
         lr = -Inf; warning('proposal was rejected because I+XDX was not positive-definite');
     end
 end
+
 
 function x = gen_truncated_exp(mn,trunc_point)
     r = mn.*trunc_point;
@@ -292,6 +417,8 @@ function x = gen_truncated_exp(mn,trunc_point)
     x(~sml) = -log(1+tmp(~sml))./mn(~sml);
     
 end
+
+
 
 
 
