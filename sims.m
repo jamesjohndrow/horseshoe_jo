@@ -1,10 +1,11 @@
 clear; 
+LASTN = maxNumCompThreads(11);
 SAVE_SAMPLES=true;disp_int = 1000; corX = false; rhoX = .9;
 delt = 1e-4; nkeep = 100; mh_sigma = true;
-ApproxXLX = true; ab = false;
+ApproxXLX = false; ab = false;
 s_sigma = .1; 
 
-scl_ub = .8; % scale for Metropolis-Hastings proposals for xi
+scl_ub = .8; % scale for Metropolis-Hastings proposals for xi, use .8 except for gwas data use .5
 scl_lb = .8; % lb scale, use 0.8 for sims
 phasein = 1;
 
@@ -14,7 +15,7 @@ phasein = 1;
 %     ns(j) = randsample(1000:5000,1);
 % end
 
-ps = [20000]; ns = [2000];
+ps = [20000]; ns = [1000];
 
 rnd_seed = 571;
 nmc = 20000; % length of Markov chain
@@ -24,7 +25,14 @@ sim_type = 'F'; % Frequentist or Bayesian
 plotting = true; 
 
 a0 = 1; b0 = 1;
-BURNIN = 0; MCMC = nmc; thin = 1; 
+BURNIN = 1000; MCMC = nmc; thin = 1; 
+
+% 
+%delt(1:5000) = 1e-3;
+%delt(5001:10000) = 1e-4;
+%delt(10001:15000) = 5e-5;
+%delt(15001:end) = 1e-5;
+
 
 ctr = 0;
 for p=ps
@@ -41,7 +49,7 @@ for p=ps
       BetaTrue(1:23) = 2.^(-(-2:.25:3.5));
       TauTrue = 1;
     elseif strcmp(sim_type,'maize')
-        load('Data/gwas/maize/maize.mat');
+        load('Data/maize.mat');
         Xt = X; yt = y;
         
         p = size(X,2);
@@ -63,6 +71,7 @@ for p=ps
         end
         y = X*BetaTrue+SigmaTrue.*normrnd(0,1,[n 1]);
         yt = []; Xt = [];
+        save(strcat('Outputs/sim_vars_',num2str(n),'_',num2str(p),'.mat'),'X','y');
     end
 
     
@@ -71,7 +80,7 @@ for p=ps
     slice_lambda = true; % whether to update lambda via slice sampling    
     burn = 0; % number of burn-ins
 
-    
+    rng(5171);
     if ab
         [pMean,pMedian,pLambda,pSigma,betaout]=horseshoe_ab_mrg(y,X,BURNIN,MCMC,thin,1,SAVE_SAMPLES,BetaTrue,nkeep,corX,sim_type,rhoX);            
     else

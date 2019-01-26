@@ -1,5 +1,5 @@
 rm(list=ls(all=T))
-setwd('~/Documents/GitHub/horseshoe/Code/')
+setwd('/data1/GitHub/horseshoe/Code/')
 
 if (!require(pacman)) {install.packages('pacman')}
 pacman::p_load(R.matlab,coda,h5,ggplot2,gridExtra,ggpubr,xtable,tidyr,dplyr,mcmcse,readr,parallel,ARTP2)
@@ -112,6 +112,20 @@ df.bet$iter <- seq(nmc)
 df.bet <- df.bet %>% gather(variable,value,-iter)
 df.bet$variable <- as.numeric(df.bet$variable)
 
+df.bet <- df.bet %>% mutate(is.in=abs(value)>1e-3)
+df.mip <- df.bet %>% group_by(variable) %>% summarise(mip=mean(is.in))
+
+png('Figures/MIP-maize.png',width=600,height=400)
+ggplot(df.mip,aes(x=mip)) + geom_histogram() + theme(text=element_text(size=24)) + xlab(expression(P(abs(beta[j])>.001)))
+dev.off()
+
+bet.size <- apply(bet,1,function(x){sum(abs(x)>1e-3)})
+df.size <- data.frame(iter=seq(nmc),size=bet.size)
+
+png('Figures/ModSize.png',width=600,height=400)
+ggplot(df.size,aes(x=size)) + geom_histogram(bins = 20) + theme(text=element_text(size=24)) + xlab(expression(abs(j : abs(beta[j])>.001)))
+dev.off()
+
 df.keep <- data.frame(id.num=keep.id)
 rnks.df <- data.frame(rnk=rnks.bet,id.num=keep.id)
 df.bet <- df.bet %>% inner_join(rnks.df,by=c("variable" = "id.num"))
@@ -128,6 +142,16 @@ ggplot(df.bet[df.bet$rnk<10,],aes(x=value)) + geom_density(size=1.2) + facet_wra
   theme(legend.position = 'none')
 dev.off()
 
+df.bet.wide <- df.bet %>% filter(rnk>=10 & rnk<20) %>% select(-rnk) %>% spread(variable,value)
+
+names(df.bet.wide)[2:ncol(df.bet.wide)] <- paste('X',names(df.bet.wide)[2:ncol(df.bet.wide)],sep='')
+
+png('Figures/biplot_maize_example.png',width=900,height=600)
+ggplot(df.bet.wide,aes(x=X19570,y=X32720)) +   stat_density_2d(aes(fill = ..level..), geom = "polygon") +
+  ylim(-.08,.02) + xlim(-.08,.02) + theme(text=element_text(size=24))
+dev.off()
+
+#ggplot(df.bet.wide,aes(x=bet72059,y=bet94631)) +   stat_density_2d(aes(fill = ..level..), geom = "polygon") 
 #######
 # the old application, currently not used in paper
 #######
@@ -243,6 +267,7 @@ df.mi$y <- c(35,35,35)
 png('Figures/hist_ess_compare.png',width=800,height=400)
 ggplot(df.es,aes(x=es)) + geom_histogram() + facet_grid(~algo) + scale_x_log10() +
   geom_text(data=df.mn,aes(x=es,y=y,label=lab),size=9) +
+  geom_text(data=df.mi,aes(x=es,y=y,label=lab),size=9) +
   theme(text=element_text(size=32),axis.text.x = element_text(angle=90)) + xlab(expression(n[e]))
   #+ 
   #geom_text(data=df.mx,aes(x=es,y=y,label=lab)) + 
@@ -255,9 +280,15 @@ df.xi$lag <- seq(100)
 df.xi <- df.xi %>% gather(algo,ac,-lag)
 df.xi$algo <- factor(df.xi$algo,levels=c('old','new','approximate'))
 
+png('Figures/acs_compare_noapprox.png',width=800,height=400)
+ggplot(df.xi %>% filter(algo!='approximate'),aes(x=lag,y=ac,lty=algo)) + geom_line(size=2) +
+  theme(text=element_text(size=32),legend.key.width = unit(3,"cm")) + ylim(0,1)
+dev.off()
+
+
 png('Figures/acs_compare.png',width=800,height=400)
 ggplot(df.xi,aes(x=lag,y=ac,lty=algo)) + geom_line(size=2) +
-  theme(text=element_text(size=32),legend.key.width = unit(3,"cm"))
+  theme(text=element_text(size=32),legend.key.width = unit(3,"cm")) 
 dev.off()
 
 tmp <- df.es[df.es$var=='xi',]
@@ -483,7 +514,7 @@ print.xtable(xtable(fit.tab,caption = 'estimated parameters from regression of $
 
 # performance in estimation
 
-fl <- list.files(path='~/Documents/GitHub/horseshoe/Code/Outputs/Compare',pattern='post_reg_.*')
+fl <- list.files(path='/data1/GitHub/horseshoe/Code/Outputs/Compare',pattern='post_reg_.*')
 
 cov.comp <- matrix(0,20,3)
 mse.comp <- matrix(0,20,3)
@@ -568,7 +599,7 @@ df.cov$algo <- factor(df.cov$algo,levels=c('old','new','approximate'))
 
 png('Figures/coverage.png',width=600,height=400)
 ggplot(df.cov,aes(x=algo,y=coverage)) + geom_boxplot() +
-  theme(text=element_text(size=32))
+  theme(text=element_text(size=32)) + ylim(0.85,1.0)
 dev.off()
 
 df.mse <- data.frame(mse.comp)

@@ -56,7 +56,11 @@ function[Beta_hat,pMedian,pLambda,pSigma,betaout,xiout,sigmaSqout,lambdaout,t]=h
 %profile on;
 
 if ApproxXLX
-    simtype = strcat(simtype,'_approx_',num2str(-log10(delt)));
+    if length(delt)==1
+        simtype = strcat(simtype,'_approx_',num2str(-log10(delt)));
+    else
+        simtype = strcat(simtype,'_approx_dseq');
+    end
 end
 if corX
    simtype = strcat(simtype,'_cor_',strrep(num2str(rhoX*10),'.','_')); 
@@ -64,6 +68,9 @@ end
 
 tic;
 N=BURNIN+MCMC;
+if length(delt)==1
+   delt = delt.*ones(N,1); 
+end
 effsamp=(N-BURNIN)/thin;
 [n,p]=size(X);
 %[U,D,V] = svd(X,'econ');
@@ -116,7 +123,7 @@ for i=1:N
         disp([num2str(disp_int) ' iterations in ' num2str(dt) ' seconds']);
         %Beta(1:20)'        
     end
-    % disp(num2str(i));
+    %disp(num2str(i));
     % update tau %
     if i>0
         Eta = lambda.^(-2);
@@ -129,7 +136,7 @@ for i=1:N
         %prop_Xi = exp(trnd(2).*std_MH + log(Xi));
         
         if ApproxXLX
-            which_in = lambda.^2.*max(1/Xi,1/prop_Xi)>delt;
+            which_in = lambda.^2.*max(1/Xi,1/prop_Xi)>delt(i);
             id1 = (1:p)'; id1 = id1(which_in);
             rXLX = sum(which_in);
             %disp(num2str(rXLX));
@@ -254,9 +261,10 @@ for i=1:N
         end
     end
 
-    u = unifrnd(0, 1./(Eta+1));
+    %u = unifrnd(0, 1./(Eta+1));
     gamma_rate = (Beta.^2) .* Xi ./ (2.*sigma_sq);
-    Eta = gen_truncated_exp(gamma_rate, (1-u)./u);
+    %Eta = gen_truncated_exp(gamma_rate, (1-u)./u);
+    Eta = HSeta_rs_smallM(gamma_rate);
     if any(Eta<=0)
         disp([num2str(sum(Eta<=0)) ' Eta underflowed, replacing = machine epsilon']);
         Eta(Eta<=0) = eps;
@@ -362,7 +370,7 @@ end
 
 disp([num2str(t) ' seconds elapsed']);
 if SAVE_SAMPLES
-    save(strcat('Outputs/post_reg_horse_',simtype,'_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t',...
+    save(strcat('Outputs/post_reg_horse_rep_',simtype,'_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t',...
         'ci_hi','ci_lo','coverage','BetaHat','mse','se','BetaTrue','keep_id');
 end
 
@@ -418,7 +426,18 @@ function x = gen_truncated_exp(mn,trunc_point)
     
 end
 
-
+function x = samp_eta(M)
+    n = length(M);
+    cont = true(n,1);
+    x = zeros(n,1);   
+    while any(cont)  
+        n = sum(cont);
+        x(cont) = exprnd(M(cont),[n 1]);
+        u = unifrnd(0,1,[n 1]);
+        y = (1-u)./u;
+        cont(cont) = (y>=x(cont));
+    end
+end
 
 
 
