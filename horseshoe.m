@@ -146,6 +146,7 @@ for i=1:N
             LX1 = bsxfun(@times,lambda1.^2,X1');
             
             LX = LX1;
+            %LX = bsxfun(@times,lambda.^2,X');
             if rXLX < n/2
                 XX1 = X1'*X1;
             else
@@ -370,7 +371,7 @@ end
 
 disp([num2str(t) ' seconds elapsed']);
 if SAVE_SAMPLES
-    save(strcat('Outputs/post_reg_horse_rep_',simtype,'_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t',...
+    save(strcat('Outputs/post_reg_horse_conc_',simtype,'_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t',...
         'ci_hi','ci_lo','coverage','BetaHat','mse','se','BetaTrue','keep_id');
 end
 
