@@ -35,6 +35,7 @@ function [samp,numdraw] = HSeta_rs_smallM(M,varargin)
     if ~isempty(varargin)
         if length(varargin)==1
             a = varargin{1};
+            b = 10. * ones(n,1);
         elseif length(varargin)==2
             b = varargin{2};
         else

@@ -15,9 +15,10 @@ phasein = 1;
 %     ns(j) = randsample(1000:5000,1);
 % end
 
-ps = [20000]; ns = [2000];
 
-rnd_seed = 571;
+ps = 20000.*ones(1,10); ns = 200:200:2000;
+
+%rnd_seed = 571;
 nmc = 20000; % length of Markov chain
 
 is_sim = true;
@@ -39,7 +40,9 @@ for p=ps
     ctr = ctr + 1;
     n = ns(ctr);
     disp(['p: ' num2str(p) ' n: ' num2str(n)]);
-    rng(rnd_seed);
+    
+    %rng(rnd_seed);
+    
     %p = 10000; % number of parameters   
 
     % True parameters
