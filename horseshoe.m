@@ -144,8 +144,7 @@ for i=1:N
             lambda1 = lambda(id1); X1 = X(:,id1);
             
             LX1 = bsxfun(@times,lambda1.^2,X1');
-            
-            LX = LX1;
+                        
             if rXLX < n/2
                 XX1 = X1'*X1;
             else
@@ -224,7 +223,17 @@ for i=1:N
         sigma_sq = 1/gamrnd((n+a0)/2,2/(ssr+b0));
     end
     
-
+    if ApproxXLX
+        which_in2 = lambda.^2.*(1/Xi)>delt(i).^2;
+        id2 = (1:p)'; id2 = id2(which_in2);        
+                    
+        lambda2 = lambda(id2); X2 = X(:,id2);
+        
+        %LX = spdiags(lambda2,0,p,p)*(X');
+        
+        LX = bsxfun(@times,lambda2.^2,X2');
+        %LX = bsxfun(@times,lambda.^2,X');
+    end
     
     U = (1./Xi).*LX;    
     
@@ -237,12 +246,24 @@ for i=1:N
     if ApproxXLX && rXLX<n/2 % woodbury
         tmp = (Xi.*diag(lambda1.^(-2))+XX1)\(X1'*((y./sqrt(sigma_sq))-v));
         v_star = ((y./sqrt(sigma_sq))-v)-X1*tmp;
-        Beta = sqrt(sigma_sq)*u;
-        Beta(id1) = Beta(id1) + sqrt(sigma_sq)*(U*v_star);
+        
+%         Beta = sqrt(sigma_sq)*u;
+%         Beta(id1) = Beta(id1) + sqrt(sigma_sq)*(U*v_star);
+
+         Beta = sqrt(sigma_sq)*u;
+         Beta(id2) = Beta(id2) + sqrt(sigma_sq)*(U*v_star);
+        
+%          Beta=sqrt(sigma_sq)*(u+U*v_star);
     elseif ApproxXLX && rXLX>=n/2 % direct solve
         v_star=(M)\((y./sqrt(sigma_sq))-v);
+        
+%         Beta = sqrt(sigma_sq)*u;
+%         Beta(id1) = Beta(id1) + sqrt(sigma_sq)*(U*v_star);
+
         Beta = sqrt(sigma_sq)*u;
-        Beta(id1) = Beta(id1) + sqrt(sigma_sq)*(U*v_star);
+        Beta(id2) = Beta(id2) + sqrt(sigma_sq)*(U*v_star);
+        
+%          Beta=sqrt(sigma_sq)*(u+U*v_star);
     else
         v_star=(M)\((y./sqrt(sigma_sq))-v);
         Beta=sqrt(sigma_sq)*(u+U*v_star);

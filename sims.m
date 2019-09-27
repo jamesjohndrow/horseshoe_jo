@@ -2,7 +2,7 @@ clear;
 LASTN = maxNumCompThreads(11);
 SAVE_SAMPLES=true;disp_int = 1000; corX = false; rhoX = .9;
 delt = 1e-4; nkeep = 100; mh_sigma = true;
-ApproxXLX = false; ab = false;
+ApproxXLX = true; ab = false;
 s_sigma = .1; 
 
 scl_ub = .8; % scale for Metropolis-Hastings proposals for xi, use .8 except for gwas data use .5
@@ -15,7 +15,7 @@ phasein = 1;
 %     ns(j) = randsample(1000:5000,1);
 % end
 
-ps = [20000]; ns = [1000];
+ps = [20000]; ns = [2000];
 
 rnd_seed = 571;
 nmc = 20000; % length of Markov chain

@@ -115,15 +115,15 @@ df.bet$variable <- as.numeric(df.bet$variable)
 df.bet <- df.bet %>% mutate(is.in=abs(value)>1e-3)
 df.mip <- df.bet %>% group_by(variable) %>% summarise(mip=mean(is.in))
 
-png('Figures/MIP-maize.png',width=600,height=400)
-ggplot(df.mip,aes(x=mip)) + geom_histogram() + theme(text=element_text(size=24)) + xlab(expression(P(abs(beta[j])>.001)))
+png('Figures/MIP-maize.png',width=900,height=600)
+ggplot(df.mip,aes(x=mip)) + geom_histogram() + theme(text=element_text(size=32)) + xlab(expression(P(abs(beta[j])>.001)))
 dev.off()
 
 bet.size <- apply(bet,1,function(x){sum(abs(x)>1e-3)})
 df.size <- data.frame(iter=seq(nmc),size=bet.size)
 
-png('Figures/ModSize.png',width=600,height=400)
-ggplot(df.size,aes(x=size)) + geom_histogram(bins = 20) + theme(text=element_text(size=24)) + xlab(expression(abs(j : abs(beta[j])>.001)))
+png('Figures/ModSize.png',width=900,height=600)
+ggplot(df.size,aes(x=size)) + geom_histogram(bins = 20) + theme(text=element_text(size=32)) + xlab(expression(abs(j : abs(beta[j])>.001)))
 dev.off()
 
 df.keep <- data.frame(id.num=keep.id)
