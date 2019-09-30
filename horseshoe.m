@@ -89,6 +89,7 @@ etaout = zeros(nkeep,effsamp);
 tauout=zeros(effsamp,1);
 xiout = zeros(MCMC+BURNIN,1);
 sigmaSqout=zeros(effsamp,1);
+plossout = zeros(effsamp,1);
 l1out = zeros(MCMC+BURNIN,1);
 pexpout = zeros(MCMC+BURNIN,1);
 ACC = zeros(MCMC+BURNIN,1);
@@ -313,6 +314,7 @@ for i=1:N
     if is_sim
         per_expl = 1-sqrt(sum((Beta-BetaTrue).^2))./sqrt(sum(BetaTrue.^2));        
         L1_loss = 1-sum(abs(Beta-BetaTrue))./sum(abs(BetaTrue));
+        pred_loss = p^(-1).*sum((X*(Beta-BetaTrue)).^2);
     else
         res1 = yt-Xt(:,id1)*Beta_hat(id1);
         per_expl = 1-sqrt(sum(res1.^2))./sqrt(sum(yt.^2));
@@ -328,10 +330,14 @@ for i=1:N
             keep_id = [big_id;other_id];
         else
             keep_id = (1:nkeep)';
+            BetaSum = 0;
+            Beta2Sum = 0;
         end
     end
     
-    if i > BURNIN && mod(i, thin)== 0        
+    if i > BURNIN && mod(i, thin)== 0    
+        BetaSum = BetaSum + Beta;
+        Beta2Sum = Beta2Sum + Beta.^2;
         betaout(:,(i-BURNIN)/thin) = Beta(keep_id);
         lambdaout(:,(i-BURNIN)/thin) = lambda(keep_id);
         etaout(:,(i-BURNIN)/thin) = Eta(keep_id);
@@ -340,6 +346,7 @@ for i=1:N
         sigmaSqout((i-BURNIN)/thin)=sigma_sq;
         l1out((i-BURNIN)/thin) = L1_loss;
         pexpout((i-BURNIN)/thin) = per_expl;
+        plossout((i-BURNIN)/thin) = pred_loss;
     end
 end
 pMean=mean(betaout,2);
@@ -367,11 +374,14 @@ else
    BetaHat = Beta_hat;
 end
 
+pred_loss_hat = n^(-1).*sum((X*(BetaSum./((MCMC-BURNIN)/thin)-BetaTrue)).^2);
 
 disp([num2str(t) ' seconds elapsed']);
 if SAVE_SAMPLES
-    save(strcat('Outputs/post_reg_horse_conc_',simtype,'_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t',...
-        'ci_hi','ci_lo','coverage','BetaHat','mse','se','BetaTrue','keep_id');
+    %save(strcat('Outputs/rep2/post_reg_horse_conc_',simtype,'_',num2str(n),'_',num2str(p),'.mat'),'betaout','lambdaout','etaout','tauout','xiout','sigmaSqout','l1out','pexpout','t',...
+    %    'ci_hi','ci_lo','coverage','BetaHat','mse','se','BetaTrue','keep_id','BURNIN','MCMC');
+    save(strcat('Outputs/rep11/post_reg_horse_conc_',simtype,'_',num2str(n),'_',num2str(p),'.mat'),'l1out','pexpout','plossout','BetaSum','Beta2Sum','t',...
+        'ci_hi','ci_lo','coverage','BetaHat','mse','se','BetaTrue','keep_id','BURNIN','MCMC','pred_loss_hat');
 end
 
 

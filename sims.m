@@ -9,6 +9,11 @@ scl_ub = .8; % scale for Metropolis-Hastings proposals for xi, use .8 except for
 scl_lb = .8; % lb scale, use 0.8 for sims
 phasein = 1;
 
+%sXi = [1.4;1.2;1;.8.*ones(7,1)];
+%sSi = [.3;.25;.2;.15;.1.*ones(6,1)];
+
+sXi = [.8 .8]; sSi = [.1 .1];
+
 % ps = randsample(5001:50000,20,false);
 % ns = zeros(length(ps),1);
 % for j=1:length(ps)
@@ -16,7 +21,8 @@ phasein = 1;
 % end
 
 
-ps = 20000.*ones(1,10); ns = 200:200:2000;
+%ps = 20000.*ones(1,10); ns = 200:200:2000;
+ps = [20000 20000]; ns = [1800 2000];
 
 %rnd_seed = 571;
 nmc = 20000; % length of Markov chain
@@ -41,6 +47,7 @@ for p=ps
     n = ns(ctr);
     disp(['p: ' num2str(p) ' n: ' num2str(n)]);
     
+    s_sigma = sSi(ctr); scl_ub = sXi(ctr); scl_lb = sXi(ctr);
     %rng(rnd_seed);
     
     %p = 10000; % number of parameters   
